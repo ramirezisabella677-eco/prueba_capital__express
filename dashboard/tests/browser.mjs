@@ -1,0 +1,53 @@
+import {chromium} from 'playwright-core';
+import {mkdir,writeFile} from 'node:fs/promises';
+import assert from 'node:assert/strict';
+const path='artifacts';await mkdir(path,{recursive:true});
+const browser=await chromium.launch({executablePath:'C:/Program Files/Google/Chrome/Application/chrome.exe',headless:true});
+const errors=[];
+try{
+ const page=await browser.newPage({viewport:{width:1512,height:1050},acceptDownloads:true,reducedMotion:'reduce'});
+ page.on('pageerror',error=>errors.push(error.message));
+ await page.goto('http://127.0.0.1:4173',{waitUntil:'networkidle'});
+ assert.match(await page.locator('h1').innerText(),/Control de cartera/);
+ await page.screenshot({path:`${path}/dashboard-desktop.png`,fullPage:true});
+ for(const view of ['composition','aging','income','insurance','policy','invoices','overview']){
+  await page.locator(`.sidebar button[data-view="${view}"]`).click();
+  assert.ok(await page.locator('#workspace').isVisible());
+  assert.ok(!(await page.locator('#workspace').innerText()).includes('NaN'));
+ }
+ await page.locator('[data-status="Pagada"]').click();
+ assert.match(await page.locator('.selection-note').innerText(),/354 de 870/);
+ const [download]=await Promise.all([page.waitForEvent('download'),page.locator('[data-action="pdf"]').click()]);
+ await download.saveAs(`${path}/Sintesis_filtrada_pagada.pdf`);
+ await page.locator('[data-action="reset"]').click();
+ await page.locator('.sidebar [data-view="composition"]').click();
+ await page.locator('.bar-row[data-drill="region"]').first().click();
+ assert.ok(await page.locator('[data-filter="region"]').inputValue());
+ await page.locator('.bar-row[data-drill="client"]').first().click();
+ assert.ok(await page.locator('[data-filter="client"]').inputValue());
+ await page.locator('.bar-row[data-drill="debtor"]').first().click();
+ assert.match(await page.locator('h1').innerText(),/Facturas/);
+ await page.locator('button[data-invoice]').first().click();
+ assert.ok(await page.locator('.drawer').isVisible());
+ await page.keyboard.press('Escape');assert.equal(await page.locator('.drawer').count(),0);
+ await page.locator('[data-action="reset"]').click();
+ await page.locator('#invoice-search').fill('1694-47');await page.waitForTimeout(350);
+ assert.equal(await page.locator('.invoice-table tbody tr').count(),1);
+ const [csv]=await Promise.all([page.waitForEvent('download'),page.locator('[data-action="csv"]').click()]);
+ await csv.saveAs(`${path}/seleccion_facturas.csv`);
+ await page.locator('.sidebar [data-view="aging"]').click();
+ await page.locator('[data-age="financiacion"]').click();assert.match(await page.locator('#workspace').innerText(),/Fecha en revisión/);
+ await page.locator('.sidebar [data-view="insurance"]').click();await page.screenshot({path:`${path}/dashboard-seguros.png`,fullPage:true});
+ await page.locator('.sidebar [data-view="income"]').click();await page.screenshot({path:`${path}/dashboard-provisiones.png`,fullPage:true});
+ await page.setViewportSize({width:390,height:844});
+ await page.locator('.sidebar button[data-view="overview"]').click();
+ await page.screenshot({path:`${path}/dashboard-mobile.png`,fullPage:true});
+ const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1);
+ assert.equal(overflow,false,'Desbordamiento horizontal móvil');
+ assert.deepEqual(errors,[]);
+ const filePage=await browser.newPage();
+ await filePage.goto(new URL('../dist/index.html',import.meta.url).href);
+ await filePage.locator('h1').waitFor();assert.match(await filePage.locator('h1').innerText(),/Control de cartera/);
+ await writeFile(`${path}/validacion-navegador.json`,JSON.stringify({status:'OK',views:7,macroToMicro:true,pdfDownload:true,csvDownload:true,mobileOverflow:false,offlineFile:true,javascriptErrors:errors},null,2));
+ console.log('QA navegador: 7 vistas, filtros, drill-down, búsqueda, inspector, PDF/CSV, móvil y apertura directa OK.');
+}finally{await browser.close();}

@@ -1,0 +1,5 @@
+node_modules/
+artifacts/
+.vercel/
+dist/
+*.log

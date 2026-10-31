@@ -1,0 +1,12 @@
+# Este repositorio contiene solo el dashboard necesario para Vercel.
+/*
+!/.gitignore
+!/README.md
+!/dashboard/
+
+# Credenciales y configuracion local.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
